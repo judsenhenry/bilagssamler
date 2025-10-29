@@ -213,7 +213,7 @@ def add_page_numbers(input_pdf, start_page, bottom_margin=30):
 
 st.title("📘 Rønslevs Bilagssamler")
 
-uploaded_files = st.file_uploader("Upload dine 'BilagX.pdf'-filer", accept_multiple_files=True, type="pdf")
+uploaded_files = st.file_uploader("Upload dine 'Bilag X(.Y) - '...'.pdf'-filer", accept_multiple_files=True, type="pdf")
 start_page = st.number_input("Start sidetal", min_value=1, value=2)
 
 # Find vandmærket i projektmappen
