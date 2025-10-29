@@ -26,9 +26,8 @@ def add_watermark(input_pdf, watermark_pdf):
 
     pdf_writer = PdfWriter()
     for page in pdf_reader.pages:
-        # Opret kopi af vandmærket for hver side
         new_page = deepcopy(watermark)
-        # Læg original side OVENPÅ vandmærket
+        # Original side ovenpå vandmærket
         new_page.merge_page(page)
         pdf_writer.add_page(new_page)
 
@@ -36,7 +35,6 @@ def add_watermark(input_pdf, watermark_pdf):
     pdf_writer.write(output_pdf)
     output_pdf.seek(0)
     return output_pdf
-
 
 def create_simple_pdf(content, font='Times-Roman', font_size=18, title_x=100, title_y=800):
     width, height = A4
@@ -69,7 +67,6 @@ def create_simple_pdf(content, font='Times-Roman', font_size=18, title_x=100, ti
     can.save()
     packet.seek(0)
     return packet
-
 
 def create_table_of_contents(titles, page_ranges):
     packet = BytesIO()
@@ -139,16 +136,13 @@ def create_table_of_contents(titles, page_ranges):
     packet.seek(0)
     return packet
 
-
 def merge_pdfs_with_structure(pdf_files, watermark_pdf, start_page):
     merger = PdfMerger()
-    # Brug f.name for at hente filnavn som str
     titles = [os.path.splitext(f.name)[0] for f in pdf_files]
 
     page_ranges = []
     current_page = start_page
 
-    # Dummy TOC
     dummy_toc = create_table_of_contents(titles, [(0, 0)] * len(pdf_files))
     dummy_reader = PdfReader(dummy_toc)
     toc_pages = len(dummy_reader.pages)
@@ -156,7 +150,6 @@ def merge_pdfs_with_structure(pdf_files, watermark_pdf, start_page):
 
     for pdf in pdf_files:
         front_page = 1
-        # PdfReader kan læse UploadedFile direkte
         num_pages = len(PdfReader(pdf).pages)
         page_ranges.append((current_page, current_page + front_page + num_pages - 1))
         current_page += front_page + num_pages
@@ -167,13 +160,12 @@ def merge_pdfs_with_structure(pdf_files, watermark_pdf, start_page):
     for title, pdf in zip(titles, pdf_files):
         front_pdf = add_watermark(create_simple_pdf(title), watermark_pdf)
         merger.append(front_pdf)
-        merger.append(pdf)  # PdfReader kan håndtere UploadedFile
+        merger.append(pdf)
 
     output = BytesIO()
     merger.write(output)
     output.seek(0)
     return output
-
 
 def add_page_numbers(input_pdf, start_page, bottom_margin=30):
     pdf_reader = PdfReader(input_pdf)
@@ -214,16 +206,11 @@ def add_page_numbers(input_pdf, start_page, bottom_margin=30):
     output.seek(0)
     return output
 
-
 # -----------------------
 # Sorteringsfunktion
 # -----------------------
 
 def get_sorted_pdf_files(uploaded_files):
-    """
-    Sorterer PDF-filer, fx:
-    Bilag 1, Bilag 2.1, Bilag 4a, Bilag 4a.1, Bilag 4a.a, Bilag 4b
-    """
     def sort_key(file):
         name = os.path.splitext(file.name)[0]
         m = re.search(r'[Bb]ilag\s*([0-9]+[a-zA-Z]*(?:\.[0-9a-zA-Z]+)*)', name)
@@ -243,7 +230,6 @@ def get_sorted_pdf_files(uploaded_files):
         return tuple(key)
 
     return sorted(uploaded_files, key=sort_key)
-
 
 # -----------------------
 # Streamlit App
@@ -280,16 +266,15 @@ Appen sorterer filerne **numerisk og alfabetisk**: 1, 1a, 1a.1, 1a.2, 1b, 2, 3.1
 """)
 
 uploaded_files = st.file_uploader("Vælg bilag", type=["pdf"], accept_multiple_files=True)
+start_page = st.number_input("Start sidetal", min_value=1, value=2)
 
 # Vandmærke PDF placeres i samme mappe som scriptet
 watermark_path = os.path.join(os.path.dirname(__file__), "vandmærke.pdf")
 
-start_page = st.number_input("Start sidetal", min_value=1, value=2)
-
-if uploaded_files and os.path.isfile(watermark_path):
-    sorted_files = get_sorted_pdf_files(uploaded_files)
-    merged_pdf = merge_pdfs_with_structure(sorted_files, watermark_path, start_page)
-    final_pdf = add_page_numbers(merged_pdf, start_page)
-    st.download_button("⬇️ Download samlet PDF", final_pdf, file_name="samlet_bilag.pdf", mime="application/pdf")
-elif uploaded_files:
-    st.warning("Vandmærke-fil 'vandmærke.pdf' mangler i scriptmappen.")
+if uploaded_files:
+    if not os.path.isfile(watermark_path):
+        st.warning("Vandmærke-fil 'vandmærke.pdf' mangler i scriptmappen.")
+    else:
+        if st.button("📄 Generer samlet PDF"):
+            sorted_files = get_sorted_pdf_files(uploaded_files)
+            merged_pdf = merge_pdfs_with_structure(sorted
