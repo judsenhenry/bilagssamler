@@ -1,289 +1,241 @@
-{
- "cells": [
-  {
-   "cell_type": "code",
-   "execution_count": 2,
-   "id": "20c8dca1-e2ba-4b90-b7a9-36bac8b5ce85",
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "2025-10-29 09:51:36.297 \n",
-      "  \u001b[33m\u001b[1mWarning:\u001b[0m to view this Streamlit app on a browser, run it with the following\n",
-      "  command:\n",
-      "\n",
-      "    streamlit run C:\\Users\\jhe\\AppData\\Local\\anaconda3\\Lib\\site-packages\\ipykernel_launcher.py [ARGUMENTS]\n",
-      "2025-10-29 09:51:36.301 Session state does not function when running a script without `streamlit run`\n"
-     ]
-    }
-   ],
-   "source": [
-    "import streamlit as st\n",
-    "import os\n",
-    "import re\n",
-    "from io import BytesIO\n",
-    "from PyPDF2 import PdfMerger, PdfReader, PdfWriter\n",
-    "from reportlab.pdfgen import canvas\n",
-    "from reportlab.pdfbase import pdfmetrics\n",
-    "from reportlab.lib.pagesizes import A4\n",
-    "from reportlab.lib import colors\n",
-    "\n",
-    "# --- Hjælpefunktioner / PDF-håndtering ---\n",
-    "\n",
-    "def add_watermark(input_pdf, watermark_pdf):\n",
-    "    watermark_reader = PdfReader(watermark_pdf)\n",
-    "    watermark = watermark_reader.pages[0]\n",
-    "\n",
-    "    if isinstance(input_pdf, str):\n",
-    "        pdf_reader = PdfReader(input_pdf)\n",
-    "    else:\n",
-    "        pdf_reader = PdfReader(input_pdf)\n",
-    "\n",
-    "    pdf_writer = PdfWriter()\n",
-    "    for page in pdf_reader.pages:\n",
-    "        page.merge_page(watermark)\n",
-    "        pdf_writer.add_page(page)\n",
-    "\n",
-    "    output_pdf = BytesIO()\n",
-    "    pdf_writer.write(output_pdf)\n",
-    "    output_pdf.seek(0)\n",
-    "    return output_pdf\n",
-    "\n",
-    "\n",
-    "def create_simple_pdf(content, font='Times-Roman', font_size=18, title_x=100, title_y=800):\n",
-    "    width, height = A4\n",
-    "    packet = BytesIO()\n",
-    "    can = canvas.Canvas(packet, pagesize=A4)\n",
-    "    can.setFont(font, font_size)\n",
-    "\n",
-    "    side_label_x = 400\n",
-    "    max_width = side_label_x - title_x - 10\n",
-    "    line_height = font_size * 1.2\n",
-    "\n",
-    "    words = content.split()\n",
-    "    lines = []\n",
-    "    current = \"\"\n",
-    "    for w in words:\n",
-    "        test = (current + \" \" + w).strip() if current else w\n",
-    "        if pdfmetrics.stringWidth(test, font, font_size) <= max_width or current == \"\":\n",
-    "            current = test\n",
-    "        else:\n",
-    "            lines.append(current)\n",
-    "            current = w\n",
-    "    if current:\n",
-    "        lines.append(current)\n",
-    "\n",
-    "    for i, line in enumerate(lines):\n",
-    "        y = title_y - i * line_height\n",
-    "        can.drawString(title_x, y, line)\n",
-    "\n",
-    "    can.showPage()\n",
-    "    can.save()\n",
-    "    packet.seek(0)\n",
-    "    return packet\n",
-    "\n",
-    "\n",
-    "def create_table_of_contents(titles, page_ranges):\n",
-    "    packet = BytesIO()\n",
-    "    can = canvas.Canvas(packet, pagesize=A4)\n",
-    "\n",
-    "    can.setFont('Times-Bold', 18)\n",
-    "    can.drawString(100, 800, \"Indholdsfortegnelse\")\n",
-    "    can.setFont('Times-Roman', 12)\n",
-    "\n",
-    "    top_margin = 760\n",
-    "    bottom_margin = 60\n",
-    "    line_height = 18\n",
-    "    y_pos = top_margin\n",
-    "\n",
-    "    num_x = 100\n",
-    "    title_x = 125\n",
-    "    side_label_x = 400\n",
-    "    page_start_x = 450\n",
-    "    max_title_width = side_label_x - title_x - 10\n",
-    "\n",
-    "    font_name = 'Times-Roman'\n",
-    "    font_size = 12\n",
-    "\n",
-    "    for i, (title, (start, end)) in enumerate(zip(titles, page_ranges), 1):\n",
-    "        prefix = f\"{i}.\"\n",
-    "\n",
-    "        words = title.split()\n",
-    "        lines = []\n",
-    "        current_line = \"\"\n",
-    "        for w in words:\n",
-    "            test_line = (current_line + \" \" + w).strip() if current_line else w\n",
-    "            width = pdfmetrics.stringWidth(test_line, font_name, font_size)\n",
-    "            if width <= max_title_width or current_line == \"\":\n",
-    "                current_line = test_line\n",
-    "            else:\n",
-    "                lines.append(current_line)\n",
-    "                current_line = w\n",
-    "        if current_line:\n",
-    "            lines.append(current_line)\n",
-    "\n",
-    "        needed_height = line_height * len(lines)\n",
-    "        if y_pos - needed_height < bottom_margin:\n",
-    "            can.showPage()\n",
-    "            can.setFont(font_name, font_size)\n",
-    "            y_pos = top_margin\n",
-    "\n",
-    "        first_line_y = y_pos\n",
-    "        can.setFont(font_name, font_size)\n",
-    "        can.setFillColor(colors.black)\n",
-    "        can.drawString(num_x, first_line_y, prefix)\n",
-    "\n",
-    "        for li, line in enumerate(lines):\n",
-    "            can.drawString(title_x, y_pos - li * line_height, line)\n",
-    "\n",
-    "        can.setFillColor(colors.black)\n",
-    "        can.drawString(side_label_x, first_line_y, \"Side\")\n",
-    "\n",
-    "        can.setFont('Times-Bold', font_size)\n",
-    "        can.setFillColor(colors.blue)\n",
-    "        can.drawString(page_start_x, first_line_y, str(start))\n",
-    "        if end != start:\n",
-    "            start_width = pdfmetrics.stringWidth(str(start), 'Times-Bold', font_size)\n",
-    "            can.drawString(page_start_x + start_width + 2, first_line_y, f\"-{end}\")\n",
-    "\n",
-    "        y_pos = first_line_y - needed_height - (line_height * 0.2)\n",
-    "\n",
-    "    can.save()\n",
-    "    packet.seek(0)\n",
-    "    return packet\n",
-    "\n",
-    "\n",
-    "def merge_pdfs_with_structure(pdf_files, watermark_pdf, start_page):\n",
-    "    merger = PdfMerger()\n",
-    "    titles = [os.path.splitext(os.path.basename(f))[0] for f in pdf_files]\n",
-    "\n",
-    "    page_ranges = []\n",
-    "    current_page = start_page\n",
-    "\n",
-    "    dummy_toc = create_table_of_contents(titles, [(0, 0)] * len(pdf_files))\n",
-    "    dummy_reader = PdfReader(dummy_toc)\n",
-    "    toc_pages = len(dummy_reader.pages)\n",
-    "    current_page += toc_pages\n",
-    "\n",
-    "    for pdf in pdf_files:\n",
-    "        front_page = 1\n",
-    "        num_pages = len(PdfReader(pdf).pages)\n",
-    "        page_ranges.append((current_page, current_page + front_page + num_pages - 1))\n",
-    "        current_page += front_page + num_pages\n",
-    "\n",
-    "    toc_pdf = add_watermark(create_table_of_contents(titles, page_ranges), watermark_pdf)\n",
-    "    merger.append(toc_pdf)\n",
-    "\n",
-    "    for title, pdf in zip(titles, pdf_files):\n",
-    "        front_pdf = add_watermark(create_simple_pdf(title), watermark_pdf)\n",
-    "        merger.append(front_pdf)\n",
-    "        merger.append(pdf)\n",
-    "\n",
-    "    output = BytesIO()\n",
-    "    merger.write(output)\n",
-    "    output.seek(0)\n",
-    "    return output\n",
-    "\n",
-    "\n",
-    "def add_page_numbers(input_pdf, start_page, bottom_margin=30):\n",
-    "    pdf_reader = PdfReader(input_pdf)\n",
-    "    num_pages = len(pdf_reader.pages)\n",
-    "\n",
-    "    packet = BytesIO()\n",
-    "    can = canvas.Canvas(packet)\n",
-    "    font_name = 'Times-Bold'\n",
-    "    font_size = 12\n",
-    "\n",
-    "    for i in range(num_pages):\n",
-    "        page = pdf_reader.pages[i]\n",
-    "        llx, lly, urx, ury = map(float, [page.mediabox.lower_left[0], page.mediabox.lower_left[1],\n",
-    "                                         page.mediabox.upper_right[0], page.mediabox.upper_right[1]])\n",
-    "        width = urx - llx\n",
-    "        height = ury - lly\n",
-    "        can.setPageSize((width, height))\n",
-    "        page_num = start_page + i\n",
-    "        text = str(page_num)\n",
-    "        text_width = pdfmetrics.stringWidth(text, font_name, font_size)\n",
-    "        x = (width - text_width) / 2.0\n",
-    "        y = bottom_margin\n",
-    "        can.setFont(font_name, font_size)\n",
-    "        can.setFillColor(colors.blue)\n",
-    "        can.drawString(x, y, text)\n",
-    "        can.showPage()\n",
-    "\n",
-    "    can.save()\n",
-    "    packet.seek(0)\n",
-    "    numbering_pdf = PdfReader(packet)\n",
-    "    pdf_writer = PdfWriter()\n",
-    "    for page, num_page in zip(pdf_reader.pages, numbering_pdf.pages):\n",
-    "        page.merge_page(num_page)\n",
-    "        pdf_writer.add_page(page)\n",
-    "\n",
-    "    output = BytesIO()\n",
-    "    pdf_writer.write(output)\n",
-    "    output.seek(0)\n",
-    "    return output\n",
-    "\n",
-    "\n",
-    "# --- Streamlit GUI ---\n",
-    "\n",
-    "st.title(\"📘 Rønslevs Bilagssamler\")\n",
-    "\n",
-    "uploaded_files = st.file_uploader(\"Upload dine 'BilagX.pdf'-filer\", accept_multiple_files=True, type=\"pdf\")\n",
-    "watermark_pdf = st.file_uploader(\"Upload vandmærke.pdf\", type=\"pdf\")\n",
-    "start_page = st.number_input(\"Start sidetal\", min_value=1, value=2)\n",
-    "\n",
-    "if st.button(\"Generer PDF\"):\n",
-    "    if not uploaded_files or not watermark_pdf:\n",
-    "        st.error(\"Upload både bilag og vandmærke.\")\n",
-    "    else:\n",
-    "        with st.spinner(\"Genererer PDF...\"):\n",
-    "            temp_files = []\n",
-    "            for uf in uploaded_files:\n",
-    "                path = f\"/tmp/{uf.name}\"\n",
-    "                with open(path, \"wb\") as f:\n",
-    "                    f.write(uf.read())\n",
-    "                temp_files.append(path)\n",
-    "\n",
-    "            wm_path = \"/tmp/watermark.pdf\"\n",
-    "            with open(wm_path, \"wb\") as f:\n",
-    "                f.write(watermark_pdf.read())\n",
-    "\n",
-    "            merged = merge_pdfs_with_structure(temp_files, wm_path, start_page)\n",
-    "            numbered = add_page_numbers(merged, start_page)\n",
-    "\n",
-    "            st.success(\"PDF'er blev succesfuldt genereret!\")\n",
-    "            st.download_button(\n",
-    "                \"⬇️ Download samlet PDF\",\n",
-    "                numbered,\n",
-    "                file_name=\"samlet_bilag_med_indholdsfortegnelse.pdf\",\n",
-    "                mime=\"application/pdf\"\n",
-    "            )\n",
-    "\n"
-   ]
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 3 (ipykernel)",
-   "language": "python",
-   "name": "python3"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.12.7"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
+import streamlit as st
+import os
+import re
+from io import BytesIO
+from PyPDF2 import PdfMerger, PdfReader, PdfWriter
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+
+# --- Hjælpefunktioner / PDF-håndtering ---
+
+def add_watermark(input_pdf, watermark_pdf):
+    watermark_reader = PdfReader(watermark_pdf)
+    watermark = watermark_reader.pages[0]
+
+    if isinstance(input_pdf, str):
+        pdf_reader = PdfReader(input_pdf)
+    else:
+        pdf_reader = PdfReader(input_pdf)
+
+    pdf_writer = PdfWriter()
+    for page in pdf_reader.pages:
+        page.merge_page(watermark)
+        pdf_writer.add_page(page)
+
+    output_pdf = BytesIO()
+    pdf_writer.write(output_pdf)
+    output_pdf.seek(0)
+    return output_pdf
+
+
+def create_simple_pdf(content, font='Times-Roman', font_size=18, title_x=100, title_y=800):
+    width, height = A4
+    packet = BytesIO()
+    can = canvas.Canvas(packet, pagesize=A4)
+    can.setFont(font, font_size)
+
+    side_label_x = 400
+    max_width = side_label_x - title_x - 10
+    line_height = font_size * 1.2
+
+    words = content.split()
+    lines = []
+    current = ""
+    for w in words:
+        test = (current + " " + w).strip() if current else w
+        if pdfmetrics.stringWidth(test, font, font_size) <= max_width or current == "":
+            current = test
+        else:
+            lines.append(current)
+            current = w
+    if current:
+        lines.append(current)
+
+    for i, line in enumerate(lines):
+        y = title_y - i * line_height
+        can.drawString(title_x, y, line)
+
+    can.showPage()
+    can.save()
+    packet.seek(0)
+    return packet
+
+
+def create_table_of_contents(titles, page_ranges):
+    packet = BytesIO()
+    can = canvas.Canvas(packet, pagesize=A4)
+
+    can.setFont('Times-Bold', 18)
+    can.drawString(100, 800, "Indholdsfortegnelse")
+    can.setFont('Times-Roman', 12)
+
+    top_margin = 760
+    bottom_margin = 60
+    line_height = 18
+    y_pos = top_margin
+
+    num_x = 100
+    title_x = 125
+    side_label_x = 400
+    page_start_x = 450
+    max_title_width = side_label_x - title_x - 10
+
+    font_name = 'Times-Roman'
+    font_size = 12
+
+    for i, (title, (start, end)) in enumerate(zip(titles, page_ranges), 1):
+        prefix = f"{i}."
+
+        words = title.split()
+        lines = []
+        current_line = ""
+        for w in words:
+            test_line = (current_line + " " + w).strip() if current_line else w
+            width = pdfmetrics.stringWidth(test_line, font_name, font_size)
+            if width <= max_title_width or current_line == "":
+                current_line = test_line
+            else:
+                lines.append(current_line)
+                current_line = w
+        if current_line:
+            lines.append(current_line)
+
+        needed_height = line_height * len(lines)
+        if y_pos - needed_height < bottom_margin:
+            can.showPage()
+            can.setFont(font_name, font_size)
+            y_pos = top_margin
+
+        first_line_y = y_pos
+        can.setFont(font_name, font_size)
+        can.setFillColor(colors.black)
+        can.drawString(num_x, first_line_y, prefix)
+
+        for li, line in enumerate(lines):
+            can.drawString(title_x, y_pos - li * line_height, line)
+
+        can.setFillColor(colors.black)
+        can.drawString(side_label_x, first_line_y, "Side")
+
+        can.setFont('Times-Bold', font_size)
+        can.setFillColor(colors.blue)
+        can.drawString(page_start_x, first_line_y, str(start))
+        if end != start:
+            start_width = pdfmetrics.stringWidth(str(start), 'Times-Bold', font_size)
+            can.drawString(page_start_x + start_width + 2, first_line_y, f"-{end}")
+
+        y_pos = first_line_y - needed_height - (line_height * 0.2)
+
+    can.save()
+    packet.seek(0)
+    return packet
+
+
+def merge_pdfs_with_structure(pdf_files, watermark_pdf, start_page):
+    merger = PdfMerger()
+    titles = [os.path.splitext(os.path.basename(f))[0] for f in pdf_files]
+
+    page_ranges = []
+    current_page = start_page
+
+    dummy_toc = create_table_of_contents(titles, [(0, 0)] * len(pdf_files))
+    dummy_reader = PdfReader(dummy_toc)
+    toc_pages = len(dummy_reader.pages)
+    current_page += toc_pages
+
+    for pdf in pdf_files:
+        front_page = 1
+        num_pages = len(PdfReader(pdf).pages)
+        page_ranges.append((current_page, current_page + front_page + num_pages - 1))
+        current_page += front_page + num_pages
+
+    toc_pdf = add_watermark(create_table_of_contents(titles, page_ranges), watermark_pdf)
+    merger.append(toc_pdf)
+
+    for title, pdf in zip(titles, pdf_files):
+        front_pdf = add_watermark(create_simple_pdf(title), watermark_pdf)
+        merger.append(front_pdf)
+        merger.append(pdf)
+
+    output = BytesIO()
+    merger.write(output)
+    output.seek(0)
+    return output
+
+
+def add_page_numbers(input_pdf, start_page, bottom_margin=30):
+    pdf_reader = PdfReader(input_pdf)
+    num_pages = len(pdf_reader.pages)
+
+    packet = BytesIO()
+    can = canvas.Canvas(packet)
+    font_name = 'Times-Bold'
+    font_size = 12
+
+    for i in range(num_pages):
+        page = pdf_reader.pages[i]
+        llx, lly, urx, ury = map(float, [page.mediabox.lower_left[0], page.mediabox.lower_left[1],
+                                         page.mediabox.upper_right[0], page.mediabox.upper_right[1]])
+        width = urx - llx
+        height = ury - lly
+        can.setPageSize((width, height))
+        page_num = start_page + i
+        text = str(page_num)
+        text_width = pdfmetrics.stringWidth(text, font_name, font_size)
+        x = (width - text_width) / 2.0
+        y = bottom_margin
+        can.setFont(font_name, font_size)
+        can.setFillColor(colors.blue)
+        can.drawString(x, y, text)
+        can.showPage()
+
+    can.save()
+    packet.seek(0)
+    numbering_pdf = PdfReader(packet)
+    pdf_writer = PdfWriter()
+    for page, num_page in zip(pdf_reader.pages, numbering_pdf.pages):
+        page.merge_page(num_page)
+        pdf_writer.add_page(page)
+
+    output = BytesIO()
+    pdf_writer.write(output)
+    output.seek(0)
+    return output
+
+
+# --- Streamlit GUI ---
+
+st.title("📘 Rønslevs Bilagssamler")
+
+uploaded_files = st.file_uploader("Upload dine 'BilagX.pdf'-filer", accept_multiple_files=True, type="pdf")
+watermark_pdf = st.file_uploader("Upload vandmærke.pdf", type="pdf")
+start_page = st.number_input("Start sidetal", min_value=1, value=2)
+
+if st.button("Generer PDF"):
+    if not uploaded_files or not watermark_pdf:
+        st.error("Upload både bilag og vandmærke.")
+    else:
+        with st.spinner("Genererer PDF..."):
+            temp_files = []
+            for uf in uploaded_files:
+                path = f"/tmp/{uf.name}"
+                with open(path, "wb") as f:
+                    f.write(uf.read())
+                temp_files.append(path)
+
+            wm_path = "/tmp/watermark.pdf"
+            with open(wm_path, "wb") as f:
+                f.write(watermark_pdf.read())
+
+            merged = merge_pdfs_with_structure(temp_files, wm_path, start_page)
+            numbered = add_page_numbers(merged, start_page)
+
+            st.success("PDF'er blev succesfuldt genereret!")
+            st.download_button(
+                "⬇️ Download samlet PDF",
+                numbered,
+                file_name="samlet_bilag_med_indholdsfortegnelse.pdf",
+                mime="application/pdf"
+            )
