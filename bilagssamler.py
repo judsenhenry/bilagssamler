@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import re
 from io import BytesIO
 from PyPDF2 import PdfMerger, PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
@@ -8,7 +7,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 
-# --- Hjælpefunktioner / PDF-håndtering ---
+
+# --- PDF Hjælpefunktioner ---
 
 def add_watermark(input_pdf, watermark_pdf):
     watermark_reader = PdfReader(watermark_pdf)
@@ -205,17 +205,21 @@ def add_page_numbers(input_pdf, start_page, bottom_margin=30):
     return output
 
 
-# --- Streamlit GUI ---
+# --- Streamlit App ---
 
 st.title("📘 Rønslevs Bilagssamler")
 
 uploaded_files = st.file_uploader("Upload dine 'BilagX.pdf'-filer", accept_multiple_files=True, type="pdf")
-watermark_pdf = st.file_uploader("Upload vandmærke.pdf", type="pdf")
 start_page = st.number_input("Start sidetal", min_value=1, value=2)
 
+# Find vandmærket i projektmappen
+watermark_path = os.path.join(os.path.dirname(__file__), "vandmærke.pdf")
+
 if st.button("Generer PDF"):
-    if not uploaded_files or not watermark_pdf:
-        st.error("Upload både bilag og vandmærke.")
+    if not uploaded_files:
+        st.error("Upload dine bilag først.")
+    elif not os.path.exists(watermark_path):
+        st.error("Filen 'vandmærke.pdf' blev ikke fundet i projektmappen!")
     else:
         with st.spinner("Genererer PDF..."):
             temp_files = []
@@ -225,14 +229,10 @@ if st.button("Generer PDF"):
                     f.write(uf.read())
                 temp_files.append(path)
 
-            wm_path = "/tmp/watermark.pdf"
-            with open(wm_path, "wb") as f:
-                f.write(watermark_pdf.read())
-
-            merged = merge_pdfs_with_structure(temp_files, wm_path, start_page)
+            merged = merge_pdfs_with_structure(temp_files, watermark_path, start_page)
             numbered = add_page_numbers(merged, start_page)
 
-            st.success("PDF'er blev succesfuldt genereret!")
+            st.success("✅ PDF'er blev succesfuldt genereret!")
             st.download_button(
                 "⬇️ Download samlet PDF",
                 numbered,
