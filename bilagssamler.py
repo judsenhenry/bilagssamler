@@ -11,36 +11,23 @@ from reportlab.lib import colors
 # --- PDF Hjælpefunktioner ---
 
 def add_watermark(input_pdf, watermark_pdf):
-    # Læs vandmærket
     watermark_reader = PdfReader(watermark_pdf)
     watermark = watermark_reader.pages[0]
 
-    # Læs input-PDF'en (uanset om det er path eller BytesIO)
-    if isinstance(input_pdf, (str, bytes, os.PathLike)):
+    if isinstance(input_pdf, str):
         pdf_reader = PdfReader(input_pdf)
     else:
-        input_pdf.seek(0)
         pdf_reader = PdfReader(input_pdf)
 
     pdf_writer = PdfWriter()
-
     for page in pdf_reader.pages:
-        # Opret en ny side som kopi af vandmærket
-        new_page = watermark_reader.pages[0]
-        new_page = new_page  # Copy of the watermark
-        # Kopiér for at undgå at overskrive originalen
-        from copy import deepcopy
-        new_page = deepcopy(watermark)
-
-        # Læg den originale side ovenpå vandmærket
-        new_page.merge_page(page)
-        pdf_writer.add_page(new_page)
+        page.merge_page(watermark)
+        pdf_writer.add_page(page)
 
     output_pdf = BytesIO()
     pdf_writer.write(output_pdf)
     output_pdf.seek(0)
     return output_pdf
-
 
 
 def create_simple_pdf(content, font='Times-Roman', font_size=18, title_x=100, title_y=800):
@@ -222,7 +209,7 @@ def add_page_numbers(input_pdf, start_page, bottom_margin=30):
 
 st.title("📘 Rønslevs Bilagssamler")
 
-st.markdown("""
+uploaded_files = st.file_uploader("""
 ### 📄 Upload dine PDF-bilag
 Upload dine **bilagsfiler** herunder.
 
@@ -232,12 +219,8 @@ Det er vigtigt, at filnavnene **starter med 'Bilag'** (eller 'bilag'), efterfulg
 
 #### ✅ Eksempler på gyldige filnavne:
 - `Bilag 1 - Statisk system.pdf`  
-- `Bilag 2 - Lastplan.pdf`  
-- `Bilag 3.1 - Etagedæk.pdf`  
-- `Bilag 3.2 - Fundamenter.pdf`  
+- `Bilag 3.1 - Etagedæk.pdf`   
 - `Bilag 4a - Vindlast.pdf`
-- `Bilag 10 - Nyttelast.pdf`
-- `Bilag 4b - Andre bilag.pdf`
 
 #### ⚠️ Undgå disse:
 - `bilag1.pdf` *(mangler mellemrum mellem 'Bilag' og tal)*
@@ -245,9 +228,7 @@ Det er vigtigt, at filnavnene **starter med 'Bilag'** (eller 'bilag'), efterfulg
 - `BilagA.pdf` *(ingen tal før bogstav, kan give forkert sortering)*  
 
 Appen sorterer filerne **numerisk** (1, 2, 2.1, 2a, 3.2, 4b …), så dine bilag står i korrekt rækkefølge i den samlede PDF.
-""")
-
-uploaded_files = st.file_uploader("Vælg bilag", type=["pdf"], accept_multiple_files=True)
+""", accept_multiple_files=True, type="pdf")
 start_page = st.number_input("Start sidetal", min_value=1, value=2)
 
 # Find vandmærket i projektmappen
