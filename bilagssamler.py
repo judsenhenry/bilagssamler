@@ -6,16 +6,18 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+from copy import deepcopy
+import re
 
-
-# --- PDF Hjælpefunktioner ---
+# -----------------------
+# PDF Hjælpefunktioner
+# -----------------------
 
 def add_watermark(input_pdf, watermark_pdf):
-    # Læs vandmærket
+    """Placér vandmærket bagved teksten."""
     watermark_reader = PdfReader(watermark_pdf)
     watermark = watermark_reader.pages[0]
 
-    # Læs input-PDF'en (uanset om det er path eller BytesIO)
     if isinstance(input_pdf, (str, bytes, os.PathLike)):
         pdf_reader = PdfReader(input_pdf)
     else:
@@ -23,16 +25,10 @@ def add_watermark(input_pdf, watermark_pdf):
         pdf_reader = PdfReader(input_pdf)
 
     pdf_writer = PdfWriter()
-
     for page in pdf_reader.pages:
-        # Opret en ny side som kopi af vandmærket
-        new_page = watermark_reader.pages[0]
-        new_page = new_page  # Copy of the watermark
-        # Kopiér for at undgå at overskrive originalen
-        from copy import deepcopy
+        # Opret kopi af vandmærket for hver side
         new_page = deepcopy(watermark)
-
-        # Læg den originale side ovenpå vandmærket
+        # Læg original side OVENPÅ vandmærket
         new_page.merge_page(page)
         pdf_writer.add_page(new_page)
 
@@ -99,7 +95,6 @@ def create_table_of_contents(titles, page_ranges):
 
     for i, (title, (start, end)) in enumerate(zip(titles, page_ranges), 1):
         prefix = f"{i}."
-
         words = title.split()
         lines = []
         current_line = ""
@@ -217,37 +212,81 @@ def add_page_numbers(input_pdf, start_page, bottom_margin=30):
     return output
 
 
-# --- Streamlit App ---
+# -----------------------
+# Sorteringsfunktion
+# -----------------------
+
+def get_sorted_pdf_files(uploaded_files):
+    """
+    Sorterer PDF-filer, fx:
+    Bilag 1, Bilag 2.1, Bilag 4a, Bilag 4a.1, Bilag 4a.a, Bilag 4b
+    """
+    def sort_key(file):
+        name = os.path.splitext(file.name)[0]
+        m = re.search(r'[Bb]ilag\s*([0-9]+[a-zA-Z]*(?:\.[0-9a-zA-Z]+)*)', name)
+        if not m:
+            return (9999,)
+        parts = m.group(1).split('.')
+        key = []
+        for p in parts:
+            num = re.match(r'(\d+)([a-zA-Z]*)', p)
+            if num:
+                n, s = num.groups()
+                key.append(int(n))
+                if s:
+                    key.append(ord(s.lower()))
+            else:
+                key.append(ord(p.lower()) if p else 0)
+        return tuple(key)
+
+    return sorted(uploaded_files, key=sort_key)
+
+
+# -----------------------
+# Streamlit App
+# -----------------------
 
 st.title("📘 Rønslevs Bilagssamler")
 
-uploaded_files = st.file_uploader("Upload dine 'Bilag X(.Y) - '...'.pdf'-filer", accept_multiple_files=True, type="pdf")
-start_page = st.number_input("Start sidetal", min_value=1, value=2)
+st.markdown("""
+### 📄 Upload dine PDF-bilag
+Upload dine **bilagsfiler** herunder.
 
-# Find vandmærket i projektmappen
+Appen genkender og sorterer automatisk filerne ud fra deres nummer og underdel, så dine bilag står i korrekt rækkefølge i den samlede PDF.
+
+Det er vigtigt, at filnavnene **starter med 'Bilag'** (eller 'bilag'), efterfulgt af tal, og eventuelt bogstaver og punktum.
+
+#### ✅ Eksempler på gyldige filnavne:
+- `Bilag 1 - Statisk system.pdf`
+- `Bilag 2 - Lastplan.pdf`
+- `Bilag 3.1 - Etagedæk.pdf`
+- `Bilag 3.2 - Fundamenter.pdf`
+- `Bilag 4a - Vindlast.pdf`
+- `Bilag 4a.1 - Vindlast, niveau 1.pdf`
+- `Bilag 4a.2 - Vindlast, niveau 2.pdf`
+- `Bilag 4a.a - Ekstra dokument.pdf`
+- `Bilag 4b - Andre bilag.pdf`
+- `Bilag 10 - Slutrapport.pdf`
+
+#### ⚠️ Undgå disse:
+- `bilag1.pdf` *(mangler mellemrum mellem 'Bilag' og tal)*  
+- `Appendix 1.pdf` *(mangler "Bilag")*  
+- `BilagA.pdf` *(ingen tal før bogstav, kan give forkert sortering)*  
+
+Appen sorterer filerne **numerisk og alfabetisk**: 1, 1a, 1a.1, 1a.2, 1b, 2, 3.1 osv.
+""")
+
+uploaded_files = st.file_uploader("Vælg bilag", type=["pdf"], accept_multiple_files=True)
+
+# Vandmærke PDF placeres i samme mappe som scriptet
 watermark_path = os.path.join(os.path.dirname(__file__), "vandmærke.pdf")
 
-if st.button("Generer PDF"):
-    if not uploaded_files:
-        st.error("Upload dine bilag først.")
-    elif not os.path.exists(watermark_path):
-        st.error("Filen 'vandmærke.pdf' blev ikke fundet i projektmappen!")
-    else:
-        with st.spinner("Genererer PDF..."):
-            temp_files = []
-            for uf in uploaded_files:
-                path = f"/tmp/{uf.name}"
-                with open(path, "wb") as f:
-                    f.write(uf.read())
-                temp_files.append(path)
+start_page = st.number_input("Start sidetal", min_value=1, value=2)
 
-            merged = merge_pdfs_with_structure(temp_files, watermark_path, start_page)
-            numbered = add_page_numbers(merged, start_page)
-
-            st.success("✅ PDF'er blev succesfuldt genereret!")
-            st.download_button(
-                "⬇️ Download samlet PDF",
-                numbered,
-                file_name="samlet_bilag_med_indholdsfortegnelse.pdf",
-                mime="application/pdf"
-            )
+if uploaded_files and os.path.isfile(watermark_path):
+    sorted_files = get_sorted_pdf_files(uploaded_files)
+    merged_pdf = merge_pdfs_with_structure(sorted_files, watermark_path, start_page)
+    final_pdf = add_page_numbers(merged_pdf, start_page)
+    st.download_button("⬇️ Download samlet PDF", final_pdf, file_name="samlet_bilag.pdf", mime="application/pdf")
+elif uploaded_files:
+    st.warning("Vandmærke-fil 'vandmærke.pdf' mangler i scriptmappen.")
