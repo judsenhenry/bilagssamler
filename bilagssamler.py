@@ -277,4 +277,7 @@ if uploaded_files:
     else:
         if st.button("📄 Generer samlet PDF"):
             sorted_files = get_sorted_pdf_files(uploaded_files)
-            merged_pdf = merge_pdfs_with_structure(sorted
+            merged_pdf = merge_pdfs_with_structure(sorted_files, watermark_path, start_page)
+            final_pdf = add_page_numbers(merged_pdf, start_page)
+            st.success("PDF genereret!")
+            st.download_button("⬇️ Download samlet PDF", final_pdf, file_name="samlet_bilag.pdf", mime="application/pdf")
