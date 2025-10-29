@@ -142,11 +142,13 @@ def create_table_of_contents(titles, page_ranges):
 
 def merge_pdfs_with_structure(pdf_files, watermark_pdf, start_page):
     merger = PdfMerger()
-    titles = [os.path.splitext(os.path.basename(f))[0] for f in pdf_files]
+    # Brug f.name for at hente filnavn som str
+    titles = [os.path.splitext(f.name)[0] for f in pdf_files]
 
     page_ranges = []
     current_page = start_page
 
+    # Dummy TOC
     dummy_toc = create_table_of_contents(titles, [(0, 0)] * len(pdf_files))
     dummy_reader = PdfReader(dummy_toc)
     toc_pages = len(dummy_reader.pages)
@@ -154,6 +156,7 @@ def merge_pdfs_with_structure(pdf_files, watermark_pdf, start_page):
 
     for pdf in pdf_files:
         front_page = 1
+        # PdfReader kan læse UploadedFile direkte
         num_pages = len(PdfReader(pdf).pages)
         page_ranges.append((current_page, current_page + front_page + num_pages - 1))
         current_page += front_page + num_pages
@@ -164,7 +167,7 @@ def merge_pdfs_with_structure(pdf_files, watermark_pdf, start_page):
     for title, pdf in zip(titles, pdf_files):
         front_pdf = add_watermark(create_simple_pdf(title), watermark_pdf)
         merger.append(front_pdf)
-        merger.append(pdf)
+        merger.append(pdf)  # PdfReader kan håndtere UploadedFile
 
     output = BytesIO()
     merger.write(output)
