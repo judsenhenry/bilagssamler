@@ -20,9 +20,13 @@ def add_watermark(input_pdf, watermark_pdf):
         pdf_reader = PdfReader(input_pdf)
 
     pdf_writer = PdfWriter()
+
     for page in pdf_reader.pages:
-        page.merge_page(watermark)
-        pdf_writer.add_page(page)
+        # Lav en ny side baseret på vandmærket
+        new_page = watermark.copy()
+        # Læg den originale side OVENPÅ vandmærket
+        new_page.merge_page(page)
+        pdf_writer.add_page(new_page)
 
     output_pdf = BytesIO()
     pdf_writer.write(output_pdf)
