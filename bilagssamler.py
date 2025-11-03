@@ -1,57 +1,46 @@
 import streamlit as st
-import re
 import os
 from io import BytesIO
-from PyPDF2 import PdfReader, PdfWriter, PdfMerger
+from PyPDF2 import PdfMerger, PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from copy import deepcopy
-
-# ------------------------------------------------------------
-# 📘 Vandmærke — genereres automatisk (bagved teksten)
-# ------------------------------------------------------------
-def create_watermark():
-    packet = BytesIO()
-    can = canvas.Canvas(packet, pagesize=A4)
-    can.setFillColorRGB(0.8, 0.8, 0.8, alpha=0.2)
-    can.setFont("Times-Bold", 100)
-    can.saveState()
-    can.translate(300, 400)
-    can.rotate(45)
-    can.drawCentredString(0, 0, "RØNSLEV")
-    can.restoreState()
-    can.save()
-    packet.seek(0)
-    return PdfReader(packet)
 
 
-# ------------------------------------------------------------
-# 🔧 Hjælpefunktioner
-# ------------------------------------------------------------
-def add_watermark(input_pdf, watermark_reader):
-    """
-    Lægger vandmærket BAGVED indholdet på hver side.
-    """
+# --- PDF Hjælpefunktioner ---
+
+def add_watermark(input_pdf, watermark_pdf):
+    # Læs vandmærket
+    watermark_reader = PdfReader(watermark_pdf)
+    watermark = watermark_reader.pages[0]
+
+    # Læs input-PDF'en (uanset om det er path eller BytesIO)
     if isinstance(input_pdf, (str, bytes, os.PathLike)):
         pdf_reader = PdfReader(input_pdf)
     else:
         input_pdf.seek(0)
         pdf_reader = PdfReader(input_pdf)
 
-    watermark = watermark_reader.pages[0]
     pdf_writer = PdfWriter()
 
     for page in pdf_reader.pages:
-        base = deepcopy(watermark)
-        base.merge_page(page)  # Vandmærket bagved
-        pdf_writer.add_page(base)
+        # Opret en ny side som kopi af vandmærket
+        new_page = watermark_reader.pages[0]
+        new_page = new_page  # Copy of the watermark
+        # Kopiér for at undgå at overskrive originalen
+        from copy import deepcopy
+        new_page = deepcopy(watermark)
 
-    output = BytesIO()
-    pdf_writer.write(output)
-    output.seek(0)
-    return output
+        # Læg den originale side ovenpå vandmærket
+        new_page.merge_page(page)
+        pdf_writer.add_page(new_page)
+
+    output_pdf = BytesIO()
+    pdf_writer.write(output_pdf)
+    output_pdf.seek(0)
+    return output_pdf
+
 
 
 def create_simple_pdf(content, font='Times-Roman', font_size=18, title_x=100, title_y=800):
@@ -90,6 +79,7 @@ def create_simple_pdf(content, font='Times-Roman', font_size=18, title_x=100, ti
 def create_table_of_contents(titles, page_ranges):
     packet = BytesIO()
     can = canvas.Canvas(packet, pagesize=A4)
+
     can.setFont('Times-Bold', 18)
     can.drawString(100, 800, "Indholdsfortegnelse")
     can.setFont('Times-Roman', 12)
@@ -98,14 +88,22 @@ def create_table_of_contents(titles, page_ranges):
     bottom_margin = 60
     line_height = 18
     y_pos = top_margin
-    num_x, title_x, side_label_x, page_start_x = 100, 125, 400, 450
+
+    num_x = 100
+    title_x = 125
+    side_label_x = 400
+    page_start_x = 450
     max_title_width = side_label_x - title_x - 10
-    font_name, font_size = 'Times-Roman', 12
+
+    font_name = 'Times-Roman'
+    font_size = 12
 
     for i, (title, (start, end)) in enumerate(zip(titles, page_ranges), 1):
         prefix = f"{i}."
+
         words = title.split()
-        lines, current_line = [], ""
+        lines = []
+        current_line = ""
         for w in words:
             test_line = (current_line + " " + w).strip() if current_line else w
             width = pdfmetrics.stringWidth(test_line, font_name, font_size)
@@ -124,8 +122,10 @@ def create_table_of_contents(titles, page_ranges):
             y_pos = top_margin
 
         first_line_y = y_pos
+        can.setFont(font_name, font_size)
         can.setFillColor(colors.black)
         can.drawString(num_x, first_line_y, prefix)
+
         for li, line in enumerate(lines):
             can.drawString(title_x, y_pos - li * line_height, line)
 
@@ -146,9 +146,10 @@ def create_table_of_contents(titles, page_ranges):
     return packet
 
 
-def merge_pdfs_with_structure(pdf_files, watermark_reader, start_page):
+def merge_pdfs_with_structure(pdf_files, watermark_pdf, start_page):
     merger = PdfMerger()
     titles = [os.path.splitext(os.path.basename(f))[0] for f in pdf_files]
+
     page_ranges = []
     current_page = start_page
 
@@ -163,32 +164,35 @@ def merge_pdfs_with_structure(pdf_files, watermark_reader, start_page):
         page_ranges.append((current_page, current_page + front_page + num_pages - 1))
         current_page += front_page + num_pages
 
-    toc_pdf = add_watermark(create_table_of_contents(titles, page_ranges), watermark_reader)
+    toc_pdf = add_watermark(create_table_of_contents(titles, page_ranges), watermark_pdf)
     merger.append(toc_pdf)
 
     for title, pdf in zip(titles, pdf_files):
-        front_pdf = add_watermark(create_simple_pdf(title), watermark_reader)
+        front_pdf = add_watermark(create_simple_pdf(title), watermark_pdf)
         merger.append(front_pdf)
         merger.append(pdf)
 
     output = BytesIO()
     merger.write(output)
-    merger.close()
     output.seek(0)
     return output
 
 
 def add_page_numbers(input_pdf, start_page, bottom_margin=30):
-    reader = PdfReader(input_pdf)
-    num_pages = len(reader.pages)
+    pdf_reader = PdfReader(input_pdf)
+    num_pages = len(pdf_reader.pages)
+
     packet = BytesIO()
     can = canvas.Canvas(packet)
-    font_name, font_size = 'Times-Bold', 12
+    font_name = 'Times-Bold'
+    font_size = 12
 
     for i in range(num_pages):
-        page = reader.pages[i]
-        width = float(page.mediabox.width)
-        height = float(page.mediabox.height)
+        page = pdf_reader.pages[i]
+        llx, lly, urx, ury = map(float, [page.mediabox.lower_left[0], page.mediabox.lower_left[1],
+                                         page.mediabox.upper_right[0], page.mediabox.upper_right[1]])
+        width = urx - llx
+        height = ury - lly
         can.setPageSize((width, height))
         page_num = start_page + i
         text = str(page_num)
@@ -202,102 +206,68 @@ def add_page_numbers(input_pdf, start_page, bottom_margin=30):
 
     can.save()
     packet.seek(0)
-    overlay_reader = PdfReader(packet)
-    writer = PdfWriter()
-
-    for base_page, overlay_page in zip(reader.pages, overlay_reader.pages):
-        base_page.merge_page(overlay_page)
-        writer.add_page(base_page)
+    numbering_pdf = PdfReader(packet)
+    pdf_writer = PdfWriter()
+    for page, num_page in zip(pdf_reader.pages, numbering_pdf.pages):
+        page.merge_page(num_page)
+        pdf_writer.add_page(page)
 
     output = BytesIO()
-    writer.write(output)
+    pdf_writer.write(output)
     output.seek(0)
     return output
 
 
-# ------------------------------------------------------------
-# 🧮 Sorteringsfunktion
-# ------------------------------------------------------------
-def sort_bilag_filenames(files):
-    def sort_key(name):
-        name = os.path.splitext(os.path.basename(name))[0]
-        m = re.search(r'[Bb]ilag\s*([0-9]+[a-zA-Z]*(?:\.[0-9a-zA-Z]+)*)', name)
-        if not m:
-            return (9999,)
-        parts = m.group(1).split('.')
-        key = []
-        for p in parts:
-            num = re.match(r'(\d+)([a-zA-Z]*)', p)
-            if num:
-                n, s = num.groups()
-                key.append(int(n))
-                if s:
-                    key.append(ord(s.lower()))
-            else:
-                key.append(ord(p.lower()) if p else 0)
-        return tuple(key)
-
-    return sorted(files, key=sort_key)
-
-
-# ------------------------------------------------------------
-# 🌐 Streamlit GUI
-# ------------------------------------------------------------
-st.set_page_config(page_title="Rønslevs Bilagssamler", layout="centered")
+# --- Streamlit App ---
 
 st.title("📘 Rønslevs Bilagssamler")
-st.markdown("""
-Upload dine **bilags-PDF'er**, og appen samler dem automatisk til én samlet PDF med:
 
-- Forside for hvert bilag  
-- Automatisk indholdsfortegnelse  
-- Vandmærke bagved tekst  
-- Sidetal i bunden  
+uploaded_files = st.file_uploader("""
+### 📄 Upload dine PDF-bilag
+Upload dine **bilagsfiler** herunder.
 
-Appen sorterer filerne numerisk og alfabetisk — fx `1`, `1a`, `1a.1`, `1b`, `2`, `3.1`, osv.
-""")
+Appen genkender og sorterer automatisk filerne ud fra deres nummer og underdel, så dine bilag står i korrekt rækkefølge i den samlede PDF.
 
-st.markdown("""
-#### ✅ Gyldige filnavne:
-- `Bilag 1 - Statisk system.pdf`
-- `Bilag 2 - Lastplan.pdf`
-- `Bilag 3.1 - Etagedæk.pdf`
+Det er vigtigt, at filnavnene **starter med 'Bilag'** (eller 'bilag'), efterfulgt af tal, og eventuelt bogstaver og punktum.
+
+#### ✅ Eksempler på gyldige filnavne:
+- `Bilag 1 - Statisk system.pdf`  
+- `Bilag 3.1 - Etagedæk.pdf`   
 - `Bilag 4a - Vindlast.pdf`
-- `Bilag 4a.1 - Vindlast, niveau 1.pdf`
-- `Bilag 4a.a - Ekstra dokument.pdf`
-- `Bilag 4b - Fundamenter.pdf`
 
 #### ⚠️ Undgå disse:
-- `bilag1.pdf` *(mangler mellemrum)*
-- `Appendix 1.pdf` *(mangler 'Bilag')*
-- `BilagA.pdf` *(ingen tal før bogstav)*
-""")
+- `bilag1.pdf` *(mangler mellemrum mellem 'Bilag' og tal)*
+- `Appendix 1.pdf` *(mangler "Bilag")*  
+- `BilagA.pdf` *(ingen tal før bogstav, kan give forkert sortering)*  
 
-uploaded_files = st.file_uploader("📂 Vælg dine bilag", type=["pdf"], accept_multiple_files=True)
-start_page = st.number_input("Startsidetal:", min_value=1, value=2)
+Appen sorterer filerne **numerisk** (1, 2, 2.1, 2a, 3.2, 4b …), så dine bilag står i korrekt rækkefølge i den samlede PDF.
+""", accept_multiple_files=True, type="pdf")
+start_page = st.number_input("Start sidetal", min_value=1, value=2)
 
-if st.button("🔄 Generer samlet PDF") and uploaded_files:
-    with st.spinner("Genererer PDF..."):
-        temp_files = []
-        for f in uploaded_files:
-            temp_path = f.name
-            with open(temp_path, "wb") as temp_out:
-                temp_out.write(f.getbuffer())
-            temp_files.append(temp_path)
+# Find vandmærket i projektmappen
+watermark_path = os.path.join(os.path.dirname(__file__), "vandmærke.pdf")
 
-        sorted_files = sort_bilag_filenames(temp_files)
-        watermark_reader = create_watermark()
+if st.button("Generer PDF"):
+    if not uploaded_files:
+        st.error("Upload dine bilag først.")
+    elif not os.path.exists(watermark_path):
+        st.error("Filen 'vandmærke.pdf' blev ikke fundet i projektmappen!")
+    else:
+        with st.spinner("Genererer PDF..."):
+            temp_files = []
+            for uf in uploaded_files:
+                path = f"/tmp/{uf.name}"
+                with open(path, "wb") as f:
+                    f.write(uf.read())
+                temp_files.append(path)
 
-        merged = merge_pdfs_with_structure(sorted_files, watermark_reader, start_page)
-        numbered = add_page_numbers(merged, start_page)
+            merged = merge_pdfs_with_structure(temp_files, watermark_path, start_page)
+            numbered = add_page_numbers(merged, start_page)
 
-        st.success("PDF'en er genereret!")
-        st.download_button(
-            label="📥 Download samlet PDF",
-            data=numbered,
-            file_name="samlet_bilag_med_indholdsfortegnelse.pdf",
-            mime="application/pdf"
-        )
-
-        for f in temp_files:
-            os.remove(f)
+            st.success("✅ PDF'er blev succesfuldt genereret!")
+            st.download_button(
+                "⬇️ Download samlet PDF",
+                numbered,
+                file_name="samlet_bilag_med_indholdsfortegnelse.pdf",
+                mime="application/pdf"
+            )
